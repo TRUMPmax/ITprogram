@@ -1,108 +1,77 @@
-// Merchant.java
+// User.java
 @Entity
 @Data
-public class Merchant {
+public class User {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private String name;
-    private String contactPhone;
+    
+    @Column(unique = true, nullable = false)
+    private String username;
+    
+    @Column(unique = true, nullable = false)
     private String email;
-    private String address;
+    
+    @Column(name = "password_hash", nullable = false)
+    private String password;
+    
+    private String phone;
+    
     @Enumerated(EnumType.STRING)
-    private MerchantStatus status;
+    private UserStatus status;
     
-    @OneToMany(mappedBy = "merchant", cascade = CascadeType.ALL)
-    private List<Dish> menu;
-    
-    @OneToMany(mappedBy = "merchant")
-    private List<Order> orders;
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
+    private List<VerificationCode> verificationCodes;
 }
 
-// Dish.java
+// VerificationCode.java
 @Entity
 @Data
-public class Dish {
+public class VerificationCode {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private String name;
-    private String description;
-    private BigDecimal price;
-    private String category;
-    private String imageUrl;
-    private boolean isAvailable;
     
     @ManyToOne
-    @JoinColumn(name = "merchant_id")
-    private Merchant merchant;
-}
-
-// Order.java
-@Entity
-@Data
-public class Order {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-    private BigDecimal totalAmount;
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+    
+    private String code;
+    
     @Enumerated(EnumType.STRING)
-    private OrderStatus status;
+    private CodeType type;
     
-    @ManyToOne
-    @JoinColumn(name = "merchant_id")
-    private Merchant merchant;
+    private LocalDateTime expiresAt;
+}
+// UserService.java
+@Service
+@RequiredArgsConstructor
+public class UserService {
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
     
-    @OneToOne(mappedBy = "order", cascade = CascadeType.ALL)
-    private Review review;
-}
-// MerchantController.java
-@RestController
-@RequestMapping("/api/merchants")
-@RequiredArgsConstructor
-public class MerchantController {
-    private final MerchantService merchantService;
-
-    // 商家入驻申请
-    @PostMapping
-    public ResponseEntity<Merchant> register(@RequestBody MerchantRegisterDTO dto) {
-        return ResponseEntity.ok(merchantService.register(dto));
+    @Transactional
+    public User register(RegisterDTO dto) {
+        if (userRepository.existsByUsername(dto.getUsername())) {
+            throw new BusinessException("用户名已存在");
+        }
+        
+        User user = new User();
+        user.setUsername(dto.getUsername());
+        user.setEmail(dto.getEmail());
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
+        user.setPhone(dto.getPhone());
+        user.setStatus(UserStatus.UNVERIFIED);
+        
+        User savedUser = userRepository.save(user);
+        
+        // 发送验证码
+        String code = generateVerificationCode();
+        emailService.sendVerificationEmail(user.getEmail(), code);
+        
+        return savedUser;
     }
-
-    // 商家信息更新
-    @PutMapping("/{id}")
-    public ResponseEntity<Merchant> updateInfo(@PathVariable Long id, @RequestBody MerchantUpdateDTO dto) {
-        return ResponseEntity.ok(merchantService.updateInfo(id, dto));
-    }
-
-    // 管理员审核
-    @PatchMapping("/{id}/status")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Void> updateStatus(@PathVariable Long id, @RequestParam MerchantStatus status) {
-        merchantService.updateStatus(id, status);
-        return ResponseEntity.noContent().build();
-    }
-}
-
-// OrderController.java
-@RestController
-@RequestMapping("/api/orders")
-@RequiredArgsConstructor
-public class OrderController {
-    private final OrderService orderService;
-
-    // 商家获取订单列表
-    @GetMapping
-    public ResponseEntity<Page<Order>> getMerchantOrders(
-            @RequestParam Long merchantId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(orderService.getMerchantOrders(merchantId, page, size));
-    }
-
-    // 更新订单状态
-    @PatchMapping("/{id}/status")
-    public ResponseEntity<Void> updateStatus(
-            @PathVariable Long id,
-            @RequestParam OrderStatus status) {
-        orderService.updateStatus(id, status);
-        return ResponseEntity.noContent().build();
+    
+    private String generateVerificationCode() {
+        return String.valueOf(new Random().nextInt(899999) + 100000);
     }
 }
