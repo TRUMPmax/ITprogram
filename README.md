@@ -1,113 +1,108 @@
-import java.util.*;
+// Merchant.java
+@Entity
+@Data
+public class Merchant {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+    private String contactPhone;
+    private String email;
+    private String address;
+    @Enumerated(EnumType.STRING)
+    private MerchantStatus status;
+    
+    @OneToMany(mappedBy = "merchant", cascade = CascadeType.ALL)
+    private List<Dish> menu;
+    
+    @OneToMany(mappedBy = "merchant")
+    private List<Order> orders;
+}
 
-public class OrderManager {
+// Dish.java
+@Entity
+@Data
+public class Dish {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String name;
+    private String description;
+    private BigDecimal price;
+    private String category;
+    private String imageUrl;
+    private boolean isAvailable;
+    
+    @ManyToOne
+    @JoinColumn(name = "merchant_id")
+    private Merchant merchant;
+}
 
-    // 模拟订单ID递增
-    private static int orderCounter = 1000;
+// Order.java
+@Entity
+@Data
+public class Order {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private BigDecimal totalAmount;
+    @Enumerated(EnumType.STRING)
+    private OrderStatus status;
+    
+    @ManyToOne
+    @JoinColumn(name = "merchant_id")
+    private Merchant merchant;
+    
+    @OneToOne(mappedBy = "order", cascade = CascadeType.ALL)
+    private Review review;
+}
+// MerchantController.java
+@RestController
+@RequestMapping("/api/merchants")
+@RequiredArgsConstructor
+public class MerchantController {
+    private final MerchantService merchantService;
 
-    // 订单状态枚举
-    enum OrderStatus {
-        CREATED,
-        PAID,
-        DELIVERING,
-        COMPLETED,
-        CANCELLED
+    // 商家入驻申请
+    @PostMapping
+    public ResponseEntity<Merchant> register(@RequestBody MerchantRegisterDTO dto) {
+        return ResponseEntity.ok(merchantService.register(dto));
     }
 
-    // 订单实体类
-    static class Order {
-        String orderId;
-        String userName;
-        String merchantName;
-        List<String> itemList;
-        double totalPrice;
-        OrderStatus status;
-        Date createTime;
-
-        public Order(String userName, String merchantName, List<String> itemList, double totalPrice) {
-            this.orderId = "ORD" + (++orderCounter);
-            this.userName = userName;
-            this.merchantName = merchantName;
-            this.itemList = itemList;
-            this.totalPrice = totalPrice;
-            this.status = OrderStatus.CREATED;
-            this.createTime = new Date();
-        }
-
-        public void displayInfo() {
-            System.out.println("订单编号：" + orderId);
-            System.out.println("下单用户：" + userName);
-            System.out.println("商家名称：" + merchantName);
-            System.out.println("商品清单：" + itemList);
-            System.out.println("总价格：" + totalPrice);
-            System.out.println("订单状态：" + status);
-            System.out.println("下单时间：" + createTime);
-            System.out.println("--------------------------------");
-        }
+    // 商家信息更新
+    @PutMapping("/{id}")
+    public ResponseEntity<Merchant> updateInfo(@PathVariable Long id, @RequestBody MerchantUpdateDTO dto) {
+        return ResponseEntity.ok(merchantService.updateInfo(id, dto));
     }
 
-    // 所有订单列表
-    private List<Order> orderList = new ArrayList<>();
-
-    // 创建订单方法
-    public Order createOrder(String userName, String merchantName, List<String> itemList, double totalPrice) {
-        Order newOrder = new Order(userName, merchantName, itemList, totalPrice);
-        orderList.add(newOrder);
-        System.out.println("订单创建成功！");
-        newOrder.displayInfo();
-        return newOrder;
+    // 管理员审核
+    @PatchMapping("/{id}/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> updateStatus(@PathVariable Long id, @RequestParam MerchantStatus status) {
+        merchantService.updateStatus(id, status);
+        return ResponseEntity.noContent().build();
     }
+}
 
-    // 根据订单号查询订单
-    public Order findOrderById(String orderId) {
-        for (Order order : orderList) {
-            if (order.orderId.equals(orderId)) {
-                return order;
-            }
-        }
-        return null;
+// OrderController.java
+@RestController
+@RequestMapping("/api/orders")
+@RequiredArgsConstructor
+public class OrderController {
+    private final OrderService orderService;
+
+    // 商家获取订单列表
+    @GetMapping
+    public ResponseEntity<Page<Order>> getMerchantOrders(
+            @RequestParam Long merchantId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(orderService.getMerchantOrders(merchantId, page, size));
     }
 
     // 更新订单状态
-    public boolean updateOrderStatus(String orderId, OrderStatus newStatus) {
-        Order order = findOrderById(orderId);
-        if (order != null) {
-            order.status = newStatus;
-            System.out.println("订单状态已更新为：" + newStatus);
-            return true;
-        } else {
-            System.out.println("未找到该订单！");
-            return false;
-        }
-    }
-
-    // 显示所有订单
-    public void listAllOrders() {
-        if (orderList.isEmpty()) {
-            System.out.println("暂无订单信息。");
-            return;
-        }
-        for (Order order : orderList) {
-            order.displayInfo();
-        }
-    }
-
-    // 模拟测试
-    public static void main(String[] args) {
-        OrderManager manager = new OrderManager();
-
-        // 创建订单
-        List<String> items = Arrays.asList("炸鸡", "可乐", "薯条");
-        manager.createOrder("小明", "鸡你太美炸鸡店", items, 45.5);
-
-        // 创建第二个订单
-        manager.createOrder("小红", "米粉铺子", Arrays.asList("螺蛳粉", "冰绿茶"), 32.0);
-
-        // 查询并更新订单
-        manager.updateOrderStatus("ORD1001", OrderStatus.PAID);
-        manager.updateOrderStatus("ORD1001", OrderStatus.DELIVERING);
-
-        // 显示所有订单
-        manager.listAllOrders();
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<Void> updateStatus(
+            @PathVariable Long id,
+            @RequestParam OrderStatus status) {
+        orderService.updateStatus(id, status);
+        return ResponseEntity.noContent().build();
     }
 }
