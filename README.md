@@ -1,104 +1,83 @@
-  @Entity
-    public class User {
-        @Id
-        @GeneratedValue(strategy = GenerationType.IDENTITY)
-        private Long id;
-
-        @Column(unique = true)
-        private String username;
-
-        @Column(unique = true)
-        private String email;
-
-        private String passwordHash;
-
-        private String resetToken;
-
-        // Getters and Setters
-    }
-
-    @Entity
-    public class Address {
-        @Id
-        @GeneratedValue(strategy = GenerationType.IDENTITY)
-        private Long id;
-
-        private String street;
-        private String city;
-
-        @ManyToOne
-        @JoinColumn(name = "user_id")
-        private User user;
-
-        // Getters and Setters
-    }
-
-public interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByEmail(String email);
-    Optional<User> findByResetToken(String token);
-}
-
-public interface AddressRepository extends JpaRepository<Address, Long> {
-    List<Address> findByUser(User user);
-}
-@Service
-@Transactional
-public class AuthService {
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-
-    public AuthService(UserRepository userRepository, 
-                      PasswordEncoder passwordEncoder) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-    }
-
-    public User registerUser(UserRegistrationDto dto) {
-        if (userRepository.existsByEmail(dto.getEmail())) {
-            throw new EmailAlreadyExistsException(dto.getEmail());
-        }
-        
-        User user = new User();
-        user.setUsername(dto.getUsername());
-        user.setEmail(dto.getEmail());
-        user.setPasswordHash(passwordEncoder.encode(dto.getPassword()));
-        return userRepository.save(user);
-    }
-
-    public void initiatePasswordReset(String email) {
-        User user = userRepository.findByEmail(email)
-            .orElseThrow(() -> new UserNotFoundException(email));
-        
-        String token = UUID.randomUUID().toString();
-        user.setResetToken(token);
-        userRepository.save(user);
-        // 发送邮件逻辑
-    }
-}
 @RestController
-@RequestMapping("/api/auth")
-public class AuthController {
-    private final AuthService authService;
+@RequestMapping("/api")
+public class LoginController {
+    
+    private final UserService userService;
+    private final JwtTokenProvider jwtTokenProvider;
 
-    public AuthController(AuthService authService) {
-        this.authService = authService;
-    }
-
-    @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody UserRegistrationDto dto) {
-        User user = authService.registerUser(dto);
-        return ResponseEntity.created(URI.create("/users/" + user.getId())).build();
+    @Autowired
+    public LoginController(UserService userService, JwtTokenProvider jwtTokenProvider) {
+        this.userService = userService;
+        this.jwtTokenProvider = jwtTokenProvider;
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
-        // Spring Security处理登录逻辑
-        return ResponseEntity.ok().build();
+        try {
+            // 调用业务逻辑层验证用户
+            User user = userService.authenticate(request.getUsername(), request.getPassword());
+            
+            // 生成JWT令牌
+            String token = jwtTokenProvider.generateToken(user);
+            
+            // 返回响应
+            return ResponseEntity.ok(new LoginResponse(
+                token, 
+                user.getId(), 
+                user.getUsername(), 
+                user.getRole()
+            ));
+            
+        } catch (AuthenticationException ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ErrorResponse("用户名或密码错误"));
+        }
+    }
+}
+
+// DTO类
+@Data
+class LoginRequest {
+    private String username;
+    private String password;
+}
+
+@Data
+@AllArgsConstructor
+class LoginResponse {
+    private String token;
+    private Long userId;
+    private String username;
+    private String role;
+}
+
+@Data
+@AllArgsConstructor
+class ErrorResponse {
+    private String message;
+}
+@Service
+@Transactional
+public class UserServiceImpl implements UserService {
+    
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    @Autowired
+    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
-    @PostMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestBody PasswordResetRequest request) {
-        authService.initiatePasswordReset(request.getEmail());
-        return ResponseEntity.accepted().build();
+    @Override
+    public User authenticate(String username, String password) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new UsernameNotFoundException("用户不存在"));
+        
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw new BadCredentialsException("密码错误");
+        }
+        
+        return user;
     }
 }
