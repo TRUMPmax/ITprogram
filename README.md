@@ -1,7 +1,4 @@
-package com.itheima.aop;
-
-
-    @Entity
+  @Entity
     public class User {
         @Id
         @GeneratedValue(strategy = GenerationType.IDENTITY)
