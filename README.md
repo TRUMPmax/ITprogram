@@ -1,3 +1,26 @@
+@RestController @RequestMapping("/api/auth") public class AuthController { private final AuthService authService;
+
+public AuthController(AuthService authService) {
+    this.authService = authService;
+}
+
+@PostMapping("/register")
+public ResponseEntity<?> register(@RequestBody UserRegistrationDto dto) {
+    User user = authService.registerUser(dto);
+    return ResponseEntity.created(URI.create("/users/" + user.getId())).build();
+}
+
+@PostMapping("/login")
+public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+    // Spring Security处理登录逻辑
+    return ResponseEntity.ok().build();
+}
+
+@PostMapping("/reset-password")
+public ResponseEntity<?> resetPassword(@RequestBody PasswordResetRequest request) {
+    authService.initiatePasswordReset(request.getEmail());
+    return ResponseEntity.accepted().build();
+}
 @RestController
 @RequestMapping("/api")
 public class LoginController {
@@ -55,29 +78,4 @@ class LoginResponse {
 @AllArgsConstructor
 class ErrorResponse {
     private String message;
-}
-@Service
-@Transactional
-public class UserServiceImpl implements UserService {
-    
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
-
-    @Autowired
-    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder) {
-        this.userRepository = userRepository;
-        this.passwordEncoder = passwordEncoder;
-    }
-
-    @Override
-    public User authenticate(String username, String password) {
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("用户不存在"));
-        
-        if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new BadCredentialsException("密码错误");
-        }
-        
-        return user;
-    }
 }
