@@ -1,113 +1,108 @@
-// 商家实体
+// Merchant.java
 @Entity
 @Data
 public class Merchant {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     private String name;
-    private String contact;
+    private String contactPhone;
+    private String email;
+    private String address;
     @Enumerated(EnumType.STRING)
-    private MerchantStatus status; // PENDING, APPROVED, REJECTED
-    // 其他字段...
+    private MerchantStatus status;
+    
+    @OneToMany(mappedBy = "merchant", cascade = CascadeType.ALL)
+    private List<Dish> menu;
+    
+    @OneToMany(mappedBy = "merchant")
+    private List<Order> orders;
 }
 
-// 菜品实体
+// Dish.java
 @Entity
 @Data
 public class Dish {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     private String name;
+    private String description;
     private BigDecimal price;
+    private String category;
+    private String imageUrl;
+    private boolean isAvailable;
+    
     @ManyToOne
+    @JoinColumn(name = "merchant_id")
     private Merchant merchant;
-    // 其他字段...
 }
 
-// 订单实体
+// Order.java
 @Entity
 @Data
 public class Order {
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @ManyToOne
-    private Merchant merchant;
+    private BigDecimal totalAmount;
     @Enumerated(EnumType.STRING)
-    private OrderStatus status; // CREATED, PROCESSING, COMPLETED
-    // 其他字段...
+    private OrderStatus status;
+    
+    @ManyToOne
+    @JoinColumn(name = "merchant_id")
+    private Merchant merchant;
+    
+    @OneToOne(mappedBy = "order", cascade = CascadeType.ALL)
+    private Review review;
 }
+// MerchantController.java
 @RestController
 @RequestMapping("/api/merchants")
+@RequiredArgsConstructor
 public class MerchantController {
-    @PostMapping("/apply")
-    public ResponseEntity<?> apply(@RequestBody MerchantApplyDTO dto) {
-        // 验证并保存申请
-        return ResponseEntity.ok("申请已提交");
+    private final MerchantService merchantService;
+
+    // 商家入驻申请
+    @PostMapping
+    public ResponseEntity<Merchant> register(@RequestBody MerchantRegisterDTO dto) {
+        return ResponseEntity.ok(merchantService.register(dto));
     }
 
-    @PutMapping("/{id}/approve")
+    // 商家信息更新
+    @PutMapping("/{id}")
+    public ResponseEntity<Merchant> updateInfo(@PathVariable Long id, @RequestBody MerchantUpdateDTO dto) {
+        return ResponseEntity.ok(merchantService.updateInfo(id, dto));
+    }
+
+    // 管理员审核
+    @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> approve(@PathVariable Long id) {
-        // 审核逻辑
-        return ResponseEntity.ok("商家已审核通过");
+    public ResponseEntity<Void> updateStatus(@PathVariable Long id, @RequestParam MerchantStatus status) {
+        merchantService.updateStatus(id, status);
+        return ResponseEntity.noContent().build();
     }
 }
+
+// OrderController.java
 @RestController
-@RequestMapping("/api/dishes")
-public class DishController {
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> uploadDish(
-        @RequestPart DishDTO dish,
-        @RequestPart MultipartFile image) {
-        // 保存菜品和图片
-        return ResponseEntity.ok("菜品上传成功");
-    }
-}
-<template>
-  <form @submit.prevent="submitApplication">
-    <input v-model="form.name" placeholder="商家名称" required>
-    <input v-model="form.contact" placeholder="联系方式" required>
-    <button type="submit">提交申请</button>
-  </form>
-</template>
+@RequestMapping("/api/orders")
+@RequiredArgsConstructor
+public class OrderController {
+    private final OrderService orderService;
 
-<script>
-export default {
-  data() {
-    return {
-      form: { name: '', contact: '' }
+    // 商家获取订单列表
+    @GetMapping
+    public ResponseEntity<Page<Order>> getMerchantOrders(
+            @RequestParam Long merchantId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ResponseEntity.ok(orderService.getMerchantOrders(merchantId, page, size));
     }
-  },
-  methods: {
-    async submitApplication() {
-      await this.$axios.post('/api/merchants/apply', this.form);
-      alert('申请已提交！');
-    }
-  }
-}
-</script>
-<template>
-  <select v-model="selectedStatus" @change="updateStatus">
-    <option value="PROCESSING">处理中</option>
-    <option value="COMPLETED">已完成</option>
-  </select>
-</template>
 
-<script>
-export default {
-  props: ['orderId'],
-  data() {
-    return { selectedStatus: '' }
-  },
-  methods: {
-    async updateStatus() {
-      await this.$axios.put(`/api/orders/${this.orderId}/status`, {
-        status: this.selectedStatus
-      });
+    // 更新订单状态
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<Void> updateStatus(
+            @PathVariable Long id,
+            @RequestParam OrderStatus status) {
+        orderService.updateStatus(id, status);
+        return ResponseEntity.noContent().build();
     }
-  }
 }
-</script>
