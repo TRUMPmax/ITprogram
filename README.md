@@ -1,6 +1,5 @@
 import java.util.*;
 
-
 public class OrderManager {
 
     // 模拟订单ID递增
